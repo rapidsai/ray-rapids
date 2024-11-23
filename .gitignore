@@ -1,2 +1,3 @@
 *.parquet
 *.pyc
+.gdb_history
