@@ -10,7 +10,7 @@ import cudf
 from ray.util.actor_pool import ActorPool
 import cugraph
 from simpleDistributedGraph import simpleDistributedGraphImpl
-from pylibcugraph import MGGraph, ResourceHandle
+from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 
 
 
@@ -107,27 +107,33 @@ class NCCLActor:
 
         # from_dask_cudf_edgelist(dg, ddf, "src", "dst", "wgt")
 
-        src_array = df['src'] 
-        dst_array = df['dst'] 
-        weights = df['wgt']
-        self._raft_handle.getHandle()
-        rhandle = ResourceHandle(self._raft_handle)
-        # plc_graph = MGGraph(
-        #     resource_handle=self._raft_handle,
-        #     graph_properties=dg.graph_properties,
-        #     src_array=src_array,
-        #     dst_array=dst_array,
-        #     weight_array=weights,
-        #     edge_id_array=None,
-        #     edge_type_array=None,
-        #     num_arrays=1,
-        #     store_transposed=False,
-        #     symmetrize=None,
-        #     do_expensive_check=False,
-        #     drop_multi_edges=dg.graph_properties.directed,
-        # )
-        
-        return True
+        src_array = df['src'].to_cupy() 
+        dst_array = df['dst'].to_cupy() 
+        weights = df['wgt'].to_cupy()
+        # print(dir(self._raft_handle), flush=True)
+        rhandle = ResourceHandle(self._raft_handle.getHandle())
+        # TypeError: Argument 'graph_properties' has incorrect type (expected pylibcugraph.graph_properties.GraphProperties, got Properties)
+        # print(type(rhandle), flush=True)
+        graph_props = GraphProperties(
+            is_multigraph=False, #dg.properties.multi_edge (what is multi_edge)
+            is_symmetric=not dg.graph_properties.directed,
+        )
+        plc_graph = MGGraph(
+            resource_handle=rhandle,
+            graph_properties=graph_props,
+            src_array=[src_array],
+            dst_array=[dst_array],
+            weight_array=[weights],
+            edge_id_array=None,
+            edge_type_array=None,
+            num_arrays=1,
+            store_transposed=False,
+            symmetrize=False,
+            do_expensive_check=False,
+            drop_multi_edges=False,
+        )
+        # print(dir(rhandle), flush=True)
+        return plc_graph
 
 # Initialize Ray
 if not ray.is_initialized():
