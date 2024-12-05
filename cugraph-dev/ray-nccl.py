@@ -18,7 +18,7 @@ from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 class NCCLActor:
     def __init__(self, index, pool_size, session_id):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(index)
-        os.environ["NCCL_DEBUG"] = "DEBUG"
+        os.environ["NCCL_DEBUG"] = "TRACE"
         self._index = index
         self._name = f"NCCLActor-{self._index}"
         self._pool_size = pool_size
@@ -50,9 +50,58 @@ class NCCLActor:
         self._nccl.init(self._pool_size, self.root_uniqueId, self._index)
 
     def _setup_raft(self):
-        self._raft_handle = Handle(n_streams=4)
+        self._raft_handle = Handle(n_streams=0)
 
         inject_comms_on_handle_coll_only(self._raft_handle, self._nccl, self._pool_size, self._index, verbose=True)
+
+
+    def _setup_subcom(self):
+        from cugraph.dask.comms.comms_wrapper import init_subcomms as c_init_subcomms
+        import math
+
+
+        def __get_2D_div(ngpus):
+            prows = int(math.sqrt(ngpus))
+            while ngpus % prows != 0:
+                prows = prows - 1
+            return prows, int(ngpus / prows)
+
+
+        def subcomm_init(prows=2, pcols=1):
+            ngpus = self._pool_size
+            if prows is None and pcols is None:
+                if partition_type == 1:
+                    pcols, prows = __get_2D_div(ngpus)
+                else:
+                    prows, pcols = __get_2D_div(ngpus)
+            else:
+                if prows is not None and pcols is not None:
+                    if ngpus != prows * pcols:
+                        raise Exception(
+                            "prows*pcols should be equal to the\
+        number of processes"
+                        )
+                elif prows is not None:
+                    if ngpus % prows != 0:
+                        raise Exception(
+                            "prows must be a factor of the number\
+        of processes"
+                        )
+                    pcols = int(ngpus / prows)
+                elif pcols is not None:
+                    if ngpus % pcols != 0:
+                        raise Exception(
+                            "pcols must be a factor of the number\
+        of processes"
+                        )
+                    prows = int(ngpus / pcols)
+
+            self.__subcomm = (prows, pcols)
+
+
+        # subcomm_init(prows, pcols)
+        c_init_subcomms(self._raft_handle, 2)
+        
 
     def setup(self):
         if self.root_uniqueId is None:
@@ -66,6 +115,8 @@ class NCCLActor:
             self._setup_nccl()
             print("     Setting up RAFT...", flush=True)
             self._setup_raft()
+            print("     Setting up cuGraph-subcom...", flush=True)
+            self._setup_subcom()
             print("     Setup complete!", flush=True)
         except Exception as e:
             print(f"An error occurred while setting up: {e}.")
@@ -107,16 +158,16 @@ class NCCLActor:
 
         # from_dask_cudf_edgelist(dg, ddf, "src", "dst", "wgt")
 
-        src_array = df['src'].to_cupy() 
-        dst_array = df['dst'].to_cupy() 
-        weights = df['wgt'].to_cupy()
+        src_array = df['src'] 
+        dst_array = df['dst']
+        weights = df['wgt']
         # print(dir(self._raft_handle), flush=True)
         rhandle = ResourceHandle(self._raft_handle.getHandle())
         # TypeError: Argument 'graph_properties' has incorrect type (expected pylibcugraph.graph_properties.GraphProperties, got Properties)
-        # print(type(rhandle), flush=True)
+        print("len: ", len(src_array), flush=True)
         graph_props = GraphProperties(
             is_multigraph=False, #dg.properties.multi_edge (what is multi_edge)
-            is_symmetric=not dg.graph_properties.directed,
+            is_symmetric=True, #not dg.graph_properties.directed,
         )
         plc_graph = MGGraph(
             resource_handle=rhandle,
@@ -128,12 +179,11 @@ class NCCLActor:
             edge_type_array=None,
             num_arrays=1,
             store_transposed=False,
-            symmetrize=False,
+            symmetrize=True,
             do_expensive_check=False,
-            drop_multi_edges=False,
+            drop_multi_edges=True,
         )
-        # print(dir(rhandle), flush=True)
-        return plc_graph
+        return df.tail()
 
 # Initialize Ray
 if not ray.is_initialized():
@@ -142,7 +192,7 @@ if not ray.is_initialized():
 session_id = uuid.uuid4().bytes
 
 # Start 3 Workers
-pool_size = 3
+pool_size = 2
 actor_pool = [NCCLActor.options(name=f"NCCLActor-{i}").remote(i, pool_size, session_id=session_id) for i in range(pool_size)]
 
 # ray.get() blocks until this completes, required before calling `setup()`
@@ -152,7 +202,7 @@ ray.get(root_actor.broadcast_root_unique_id.remote())
 
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
 
-row_ranges = [(0, 1800), (1800, 3600), (3600, 5483)]
+row_ranges = [(0, 1800), (1800, 3600), (3600, 5484)]
 pool = ActorPool(actor_pool)
 print(list(pool.map_unordered(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
                               row_ranges)))
