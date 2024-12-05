@@ -10,6 +10,7 @@ import cudf
 from ray.util.actor_pool import ActorPool
 import cugraph
 from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
+from pylibcugraph import weakly_connected_components as pylibcugraph_wcc
 
 
 
@@ -183,10 +184,18 @@ class NCCLActor:
             do_expensive_check=False,
             drop_multi_edges=False,
         )
-
-        print("succeded")
-        # print(dir(rhandle), flush=True)
-        return df.tail()
+        res = pylibcugraph_wcc(
+                resource_handle=rhandle,
+                graph=plc_graph,
+                offsets=None,
+                indices=None,
+                weights=None,
+                labels=None,
+                do_expensive_check=False,
+            )        
+        print("succeded", flush=True)
+        print(res, flush=True)
+        return res
 
 # Initialize Ray
 if not ray.is_initialized():
@@ -209,9 +218,16 @@ row_ranges = [(0, 600), (600, 1800), (1800, 3600), (3600, 5483)]
 #row_ranges = [(0, 3600), (3600, 5483)]
 #row_ranges = [(0, 1800), (1800, 3600), (3600, 5483)]
 pool = ActorPool(actor_pool)
-print(list(pool.map_unordered(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
-                              row_ranges)))
+res = list(pool.map_unordered(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
+                              row_ranges))
 
+from cugraph.dask.components.connectivity import convert_to_cudf
+from cugraph.datasets import netscience
+wcc_ray = cudf.concat([convert_to_cudf(r) for r in res])
+print(wcc_ray.sort_values('vertex'))
+
+df = netscience.get_graph(download=True)
+print(cugraph.weakly_connected_components(df).sort_values('vertex'))
 
 # Shut down Ray
 ray.shutdown()
