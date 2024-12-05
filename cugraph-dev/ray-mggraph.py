@@ -9,7 +9,6 @@ from ray_comms import Comms
 import cudf
 from ray.util.actor_pool import ActorPool
 import cugraph
-from simpleDistributedGraph import simpleDistributedGraphImpl
 from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 
 
