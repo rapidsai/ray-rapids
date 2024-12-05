@@ -141,7 +141,7 @@ class NCCLActor:
         print(f"{self._name}: {func.__name__} {n_trials=}")
         return func(self._raft_handle, n_trials)
 
-    def load_csv(self, start, stop):
+    def weakly_connected_components(self, start, stop):
         """
         1. Each actor loads in a chunk
         2. Each actor has a NCCL/Raft Handle
@@ -211,7 +211,6 @@ df = netscience.get_edgelist(download=True)
 
 row_ranges = []
 step_size = int(len(df) / pool_size)
-
 for i in range(pool_size):
     start = i * step_size
     stop = (i + 1) * step_size
@@ -222,16 +221,26 @@ for i in range(pool_size):
 print(row_ranges)
 pool = ActorPool(actor_pool)
 
-res = list(pool.map(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
+res = list(pool.map(lambda actor, rr: actor.weakly_connected_components.remote(rr[0], rr[1]),
                               row_ranges))
 
 from cugraph.dask.components.connectivity import convert_to_cudf
 
 wcc_ray = cudf.concat([convert_to_cudf(r) for r in res])
-print(wcc_ray.sort_values('vertex'))
 
 df = netscience.get_graph(download=True)
-print(cugraph.weakly_connected_components(df).sort_values('vertex'))
+expected_dist = cugraph.weakly_connected_components(df)
+
+compare_dist = expected_dist.merge(
+    wcc_ray, on="vertex", suffixes=["_local", "_ray"]
+)
+
+unique_local_labels = compare_dist["labels_local"].unique()
+
+for label in unique_local_labels.values.tolist():
+    dask_labels_df = compare_dist[compare_dist["labels_local"] == label]
+    dask_labels = dask_labels_df["labels_ray"]
+    assert (dask_labels.iloc[0] == dask_labels).all()
 
 # Shut down Ray
 ray.shutdown()
