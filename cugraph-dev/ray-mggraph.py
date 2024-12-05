@@ -11,6 +11,7 @@ from ray.util.actor_pool import ActorPool
 import cugraph
 from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 from pylibcugraph import weakly_connected_components as pylibcugraph_wcc
+from cugraph.datasets import netscience
 
 
 
@@ -147,24 +148,18 @@ class NCCLActor:
         3. Pass each chunk and handle to MGGraph
         """
         
-        df = cudf.read_csv('/home/nfs/bzaitlen/.cugraph/datasets/netscience.csv', 
-                                nrows=stop-start, 
-                                skiprows=start, 
-                                header=None, 
-                                sep=' ', 
-                                names=["src", "dst", "wgt"])
-        # edge = cugraph.from_cudf_edgelist(df, "src", "dst", "wgt")
+        df = netscience.get_edgelist(download=True)
+        # fake a partition with loading in a smaller subset
+        df = df.iloc[start:stop]
+       
         dg = cugraph.Graph(directed=False)
 
-        # from_dask_cudf_edgelist(dg, ddf, "src", "dst", "wgt")
-
-        src_array = df['src'].to_cupy() 
-        dst_array = df['dst'].to_cupy() 
-        weights = df['wgt'].to_cupy()
-        # print(dir(self._raft_handle), flush=True)
+        src_array = df['src'] 
+        dst_array = df['dst'] 
+        weights = df['wgt']
+       
         rhandle = ResourceHandle(self._raft_handle.getHandle())
-        # TypeError: Argument 'graph_properties' has incorrect type (expected pylibcugraph.graph_properties.GraphProperties, got Properties)
-        # print(type(rhandle), flush=True)
+       
         graph_props = GraphProperties(
             is_multigraph=False, #dg.properties.multi_edge (what is multi_edge)
             is_symmetric=not dg.graph_properties.directed,
@@ -182,7 +177,7 @@ class NCCLActor:
             store_transposed=False,
             symmetrize=False,
             do_expensive_check=False,
-            drop_multi_edges=False,
+            drop_multi_edges=True,
         )
         res = pylibcugraph_wcc(
                 resource_handle=rhandle,
@@ -194,7 +189,6 @@ class NCCLActor:
                 do_expensive_check=False,
             )        
         print("succeded", flush=True)
-        print(res, flush=True)
         return res
 
 # Initialize Ray
@@ -213,16 +207,26 @@ root_actor = ray.get_actor(name="NCCLActor-0", namespace=None)
 ray.get(root_actor.broadcast_root_unique_id.remote())
 
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
+df = netscience.get_edgelist(download=True)
 
-row_ranges = [(0, 600), (600, 1800), (1800, 3600), (3600, 5483)]
+row_ranges = []
+step_size = int(len(df) / pool_size)
+
+for i in range(pool_size):
+    start = i * step_size
+    stop = (i + 1) * step_size
+    row_ranges.append((start, stop))
+
 #row_ranges = [(0, 3600), (3600, 5483)]
 #row_ranges = [(0, 1800), (1800, 3600), (3600, 5483)]
+print(row_ranges)
 pool = ActorPool(actor_pool)
-res = list(pool.map_unordered(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
+
+res = list(pool.map(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
                               row_ranges))
 
 from cugraph.dask.components.connectivity import convert_to_cudf
-from cugraph.datasets import netscience
+
 wcc_ray = cudf.concat([convert_to_cudf(r) for r in res])
 print(wcc_ray.sort_values('vertex'))
 
