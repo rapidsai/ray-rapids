@@ -18,7 +18,7 @@ from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 class NCCLActor:
     def __init__(self, index, pool_size, session_id):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(index)
-        os.environ["NCCL_DEBUG"] = "TRACE"
+        os.environ["NCCL_DEBUG"] = "DEBUG"
         self._index = index
         self._name = f"NCCLActor-{self._index}"
         self._pool_size = pool_size
@@ -67,7 +67,7 @@ class NCCLActor:
             return prows, int(ngpus / prows)
 
 
-        def subcomm_init(prows=2, pcols=1):
+        def subcomm_init(prows=2, pcols=2):
             ngpus = self._pool_size
             if prows is None and pcols is None:
                 if partition_type == 1:
@@ -158,17 +158,18 @@ class NCCLActor:
 
         # from_dask_cudf_edgelist(dg, ddf, "src", "dst", "wgt")
 
-        src_array = df['src'] 
-        dst_array = df['dst']
-        weights = df['wgt']
+        src_array = df['src'].to_cupy() 
+        dst_array = df['dst'].to_cupy() 
+        weights = df['wgt'].to_cupy()
         # print(dir(self._raft_handle), flush=True)
         rhandle = ResourceHandle(self._raft_handle.getHandle())
         # TypeError: Argument 'graph_properties' has incorrect type (expected pylibcugraph.graph_properties.GraphProperties, got Properties)
-        print("len: ", len(src_array), flush=True)
+        # print(type(rhandle), flush=True)
         graph_props = GraphProperties(
             is_multigraph=False, #dg.properties.multi_edge (what is multi_edge)
-            is_symmetric=True, #not dg.graph_properties.directed,
+            is_symmetric=not dg.graph_properties.directed,
         )
+        print("running graph creation")
         plc_graph = MGGraph(
             resource_handle=rhandle,
             graph_properties=graph_props,
@@ -179,10 +180,13 @@ class NCCLActor:
             edge_type_array=None,
             num_arrays=1,
             store_transposed=False,
-            symmetrize=True,
+            symmetrize=False,
             do_expensive_check=False,
-            drop_multi_edges=True,
+            drop_multi_edges=False,
         )
+
+        print("succeded")
+        # print(dir(rhandle), flush=True)
         return df.tail()
 
 # Initialize Ray
@@ -192,7 +196,7 @@ if not ray.is_initialized():
 session_id = uuid.uuid4().bytes
 
 # Start 3 Workers
-pool_size = 2
+pool_size = 4
 actor_pool = [NCCLActor.options(name=f"NCCLActor-{i}").remote(i, pool_size, session_id=session_id) for i in range(pool_size)]
 
 # ray.get() blocks until this completes, required before calling `setup()`
@@ -202,7 +206,9 @@ ray.get(root_actor.broadcast_root_unique_id.remote())
 
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
 
-row_ranges = [(0, 1800), (1800, 3600), (3600, 5484)]
+row_ranges = [(0, 600), (600, 1800), (1800, 3600), (3600, 5483)]
+#row_ranges = [(0, 3600), (3600, 5483)]
+#row_ranges = [(0, 1800), (1800, 3600), (3600, 5483)]
 pool = ActorPool(actor_pool)
 print(list(pool.map_unordered(lambda actor, rr: actor.load_csv.remote(rr[0], rr[1]),
                               row_ranges)))
