@@ -13,6 +13,7 @@ from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 from pylibcugraph import weakly_connected_components as pylibcugraph_wcc
 from cugraph.datasets import netscience
 
+from cugraph.dask.comms.comms_wrapper import init_subcomms as c_init_subcomms
 
 
 @ray.remote(num_gpus=1)
@@ -55,52 +56,9 @@ class NCCLActor:
 
         inject_comms_on_handle_coll_only(self._raft_handle, self._nccl, self._pool_size, self._index, verbose=True)
 
-
     def _setup_subcom(self):
-        from cugraph.dask.comms.comms_wrapper import init_subcomms as c_init_subcomms
-        import math
-
-
-        def __get_2D_div(ngpus):
-            prows = int(math.sqrt(ngpus))
-            while ngpus % prows != 0:
-                prows = prows - 1
-            return prows, int(ngpus / prows)
-
-
-        def subcomm_init(prows=2, pcols=2):
-            ngpus = self._pool_size
-            if prows is None and pcols is None:
-                if partition_type == 1:
-                    pcols, prows = __get_2D_div(ngpus)
-                else:
-                    prows, pcols = __get_2D_div(ngpus)
-            else:
-                if prows is not None and pcols is not None:
-                    if ngpus != prows * pcols:
-                        raise Exception(
-                            "prows*pcols should be equal to the\
-        number of processes"
-                        )
-                elif prows is not None:
-                    if ngpus % prows != 0:
-                        raise Exception(
-                            "prows must be a factor of the number\
-        of processes"
-                        )
-                    pcols = int(ngpus / prows)
-                elif pcols is not None:
-                    if ngpus % pcols != 0:
-                        raise Exception(
-                            "pcols must be a factor of the number\
-        of processes"
-                        )
-                    prows = int(ngpus / pcols)
-
-            self.__subcomm = (prows, pcols)
-
-
-        # subcomm_init(prows, pcols)
+        # setup sub-communicator (specific to cuGraph comms)
+        # TODO: Understand partitioning of prows / pcols from subcomm_init
         c_init_subcomms(self._raft_handle, 2)
         
 
