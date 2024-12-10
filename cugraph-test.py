@@ -76,6 +76,8 @@ def test_dask_mg_wcc(dask_client, dataset, directed):
         # result_dist =  ray_cugraph.weakly_connected_components(dg)
 
         result_dist = result_dist.compute()
+        print(result_dist.sort_values('vertex').head(), flush=True)
+        print(expected_dist.sort_values('vertex').head(), flush=True)
         compare_dist = expected_dist.merge(
             result_dist, on="vertex", suffixes=["_local", "_dask"]
         )
@@ -92,8 +94,8 @@ def test_dask_mg_wcc(dask_client, dataset, directed):
 
     print("SUCCESS", flush=True)
 
-    
-    
+
+
 
 if __name__ == "__main__":
     from dask_cuda import LocalCUDACluster

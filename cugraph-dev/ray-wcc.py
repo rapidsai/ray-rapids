@@ -12,6 +12,7 @@ import cugraph
 from pylibcugraph import MGGraph, ResourceHandle, GraphProperties
 from pylibcugraph import weakly_connected_components as pylibcugraph_wcc
 from cugraph.datasets import netscience
+from cugraph.dask.components.connectivity import convert_to_cudf
 
 from cugraph.dask.comms.comms_wrapper import init_subcomms as c_init_subcomms
 
@@ -33,7 +34,7 @@ class NCCLActor:
         self.root_uniqueId = self.uniqueId if self._index == 0 else None
         self.session_id = session_id
 
-        
+
 
     def broadcast_root_unique_id(self):
         if self._index == 0:
@@ -60,7 +61,7 @@ class NCCLActor:
         # setup sub-communicator (specific to cuGraph comms)
         # TODO: Understand partitioning of prows / pcols from subcomm_init
         c_init_subcomms(self._raft_handle, 2)
-        
+
 
     def setup(self):
         if self.root_uniqueId is None:
@@ -95,29 +96,25 @@ class NCCLActor:
     def receive_message(self, message, sender_index):
         print(f"Actor {self._index} received message from Actor {sender_index}: {message}", flush=True)
 
-    def test_comm(self, func, n_trials=5):
-        print(f"{self._name}: {func.__name__} {n_trials=}")
-        return func(self._raft_handle, n_trials)
-
     def weakly_connected_components(self, start, stop):
         """
         1. Each actor loads in a chunk
         2. Each actor has a NCCL/Raft Handle
         3. Pass each chunk and handle to MGGraph
         """
-        
+
         df = netscience.get_edgelist(download=True)
         # fake a partition with loading in a smaller subset
         df = df.iloc[start:stop]
-       
+
         dg = cugraph.Graph(directed=False)
 
-        src_array = df['src'] 
-        dst_array = df['dst'] 
+        src_array = df['src']
+        dst_array = df['dst']
         weights = df['wgt']
-       
+
         rhandle = ResourceHandle(self._raft_handle.getHandle())
-       
+
         graph_props = GraphProperties(
             is_multigraph=False, #dg.properties.multi_edge (what is multi_edge)
             is_symmetric=not dg.graph_properties.directed,
@@ -145,18 +142,19 @@ class NCCLActor:
                 weights=None,
                 labels=None,
                 do_expensive_check=False,
-            )        
+            )
         print("succeded", flush=True)
         return res
 
 # Initialize Ray
 if not ray.is_initialized():
+    # ray.init(include_dashboard=False, address="10.33.227.163:6379")
     ray.init(include_dashboard=False)
 
 session_id = uuid.uuid4().bytes
 
-# Start 3 Workers
-pool_size = 4
+# Start 4 Workers
+pool_size = 10
 actor_pool = [NCCLActor.options(name=f"NCCLActor-{i}").remote(i, pool_size, session_id=session_id) for i in range(pool_size)]
 
 # ray.get() blocks until this completes, required before calling `setup()`
@@ -164,6 +162,7 @@ actor_pool = [NCCLActor.options(name=f"NCCLActor-{i}").remote(i, pool_size, sess
 root_actor = ray.get_actor(name="NCCLActor-0", namespace=None)
 ray.get(root_actor.broadcast_root_unique_id.remote())
 
+# Setup Comms (NCCL/Sub-communicator)
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
 df = netscience.get_edgelist(download=True)
 
@@ -174,15 +173,10 @@ for i in range(pool_size):
     stop = (i + 1) * step_size
     row_ranges.append((start, stop))
 
-#row_ranges = [(0, 3600), (3600, 5483)]
-#row_ranges = [(0, 1800), (1800, 3600), (3600, 5483)]
-print(row_ranges)
 pool = ActorPool(actor_pool)
 
 res = list(pool.map(lambda actor, rr: actor.weakly_connected_components.remote(rr[0], rr[1]),
                               row_ranges))
-
-from cugraph.dask.components.connectivity import convert_to_cudf
 
 wcc_ray = cudf.concat([convert_to_cudf(r) for r in res])
 

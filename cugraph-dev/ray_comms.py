@@ -15,21 +15,8 @@
 
 import logging
 import math
-import os
-import time
 import uuid
-import warnings
-from collections import OrderedDict
 
-from dask.distributed import default_client
-from dask_cuda.utils import nvml_device_index
-
-from pylibraft.common.handle import Handle
-
-from raft_dask.common.comms_utils import (
-    inject_comms_on_handle,
-    inject_comms_on_handle_coll_only,
-)
 from raft_dask.common.nccl import nccl
 
 logger = logging.getLogger(__name__)
@@ -130,7 +117,7 @@ class Comms:
 
     def create_nccl_uniqueid(self):
         self.uniqueId = nccl.get_unique_id()
-        
+
     def init(self, workers=None):
         """
         Initializes the underlying comms. NCCL is required but
@@ -142,7 +129,7 @@ class Comms:
                   Unique collection of workers for initializing comms.
         """
         self.create_nccl_uniqueid()
-        
+
         self.nccl_initialized = True
 
         if self.comms_p2p:
