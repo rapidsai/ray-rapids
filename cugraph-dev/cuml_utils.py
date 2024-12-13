@@ -175,37 +175,3 @@ def make_blobs(
     )
     for idx, worker_row in enumerate(worker_rows)]
     ray.get(res)
-
-    # parts = [
-    #     client.submit(
-    #         _create_local_data,
-    #         part_rows,
-    #         n_features,
-    #         centers,
-    #         cluster_std,
-    #         shuffle,
-    #         int(seeds[idx]),
-    #         order,
-    #         dtype,
-    #         pure=False,
-    #         workers=[parts_workers[idx]],
-    #     )
-    #     for idx, part_rows in enumerate(worker_rows)
-    # ]
-
-    # X = [client.submit(_get_X, f, pure=False) for idx, f in enumerate(parts)]
-    # y = [
-    #     client.submit(_get_labels, f, pure=False)
-    #     for idx, f in enumerate(parts)
-    # ]
-
-    # X_del = _create_delayed(X, dtype, worker_rows, n_features)
-    # y_del = _create_delayed(y, dtype, worker_rows)
-
-    # X_final = da.concatenate(X_del, axis=0)
-    # y_final = da.concatenate(y_del, axis=0)
-
-    # if return_centers:
-    #     return X_final, y_final, centers
-    # else:
-    #     return X_final, y_final
