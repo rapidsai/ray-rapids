@@ -135,8 +135,6 @@ session_id = uuid.uuid4().bytes
 # Start 4 Workers
 pool_size = 4
 actor_pool = [NCCLActor.options(name=f"NCCLActor-{i}").remote(i, pool_size, session_id=session_id) for i in range(pool_size)]
-import time
-time.sleep(2)
 # ray.get() blocks until this completes, required before calling `setup()`
 # on non-root nodes.
 root_actor = ray.get_actor(name="NCCLActor-0", namespace=None)
