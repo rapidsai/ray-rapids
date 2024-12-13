@@ -76,15 +76,6 @@ class NCCLActor:
         if self.root_uniqueId is None:
             self.root_uniqueId = root_uniqueId
 
-    def send_message(self, message, actor_pool):
-        # for i in range(self._pool_size):
-            # if i != self._index:
-                # actor_pool[i].receive_message.remote(message, self._index)
-        futures = [actor_pool[i].receive_message.remote(message, self._index) for i in range(len(actor_pool)) if i != self._index]
-
-    def receive_message(self, message, sender_index):
-        print(f"Actor {self._index} received message from Actor {sender_index}: {message}", flush=True)
-
     def set_new_variable(self, name, value):
         setattr(self, name, value)
 
