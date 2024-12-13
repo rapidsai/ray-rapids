@@ -82,7 +82,7 @@ def make_blobs(
     ----------
 
     actors : list of Ray Actors
-            list of Ray Actors
+        list of Ray Actors
     n_samples : int
         number of rows
     n_features : int
