@@ -113,8 +113,7 @@ class NCCLActor:
 
 # Initialize Ray
 if not ray.is_initialized():
-    # ray.init(include_dashboard=False, address="10.33.227.163:6379")
-    ray.init(include_dashboard=False, dashboard_host="0.0.0.0", _temp_dir="/datasets/bzaitlen/RAY_TEMP")
+    ray.init(include_dashboard=False, dashboard_host="0.0.0.0")
 
 session_id = uuid.uuid4().bytes
 
