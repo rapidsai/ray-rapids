@@ -141,7 +141,6 @@ def make_blobs(
         generator, centers, center_box, n_samples, n_features, dtype
     )
 
-    n_parts = len(actors)
     rows_per_part = max(1, int(n_samples / n_parts))
 
     worker_rows = [rows_per_part] * n_parts
