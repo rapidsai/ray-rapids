@@ -65,7 +65,7 @@ def make_blobs(
     dtype="float32",
 ):
     """
-    Makes labeled Ray-Cupy arrays containing blobs
+    Makes labeled Ray-CuPy arrays containing blobs
     for a randomly generated set of centroids.
 
     This function calls `make_blobs` from `cuml.datasets` on each Ray Actor
@@ -78,7 +78,7 @@ def make_blobs(
     ----------
 
     actors : list of Ray Actors
-            list of Ray Actors
+        list of Ray Actors
     n_samples : int
         number of rows
     n_features : int
@@ -137,7 +137,6 @@ def make_blobs(
         generator, centers, center_box, n_samples, n_features, dtype
     )
 
-    n_parts = len(actors)
     rows_per_part = max(1, int(n_samples / n_parts))
 
     worker_rows = [rows_per_part] * n_parts
@@ -171,37 +170,3 @@ def make_blobs(
     )
     for idx, worker_row in enumerate(worker_rows)]
     ray.get(res)
-
-    # parts = [
-    #     client.submit(
-    #         _create_local_data,
-    #         part_rows,
-    #         n_features,
-    #         centers,
-    #         cluster_std,
-    #         shuffle,
-    #         int(seeds[idx]),
-    #         order,
-    #         dtype,
-    #         pure=False,
-    #         workers=[parts_workers[idx]],
-    #     )
-    #     for idx, part_rows in enumerate(worker_rows)
-    # ]
-
-    # X = [client.submit(_get_X, f, pure=False) for idx, f in enumerate(parts)]
-    # y = [
-    #     client.submit(_get_labels, f, pure=False)
-    #     for idx, f in enumerate(parts)
-    # ]
-
-    # X_del = _create_delayed(X, dtype, worker_rows, n_features)
-    # y_del = _create_delayed(y, dtype, worker_rows)
-
-    # X_final = da.concatenate(X_del, axis=0)
-    # y_final = da.concatenate(y_del, axis=0)
-
-    # if return_centers:
-    #     return X_final, y_final, centers
-    # else:
-    #     return X_final, y_final
