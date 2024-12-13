@@ -69,7 +69,7 @@ def make_blobs(
     dtype="float32",
 ):
     """
-    Makes labeled Ray-Cupy arrays containing blobs
+    Makes labeled Ray-CuPy arrays containing blobs
     for a randomly generated set of centroids.
 
     This function calls `make_blobs` from `cuml.datasets` on each Ray Actor
