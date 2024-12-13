@@ -22,10 +22,6 @@ from cuml.datasets.blobs import _get_centers
 from cuml.datasets.blobs import make_blobs as sg_make_blobs
 from cuml.common import with_cupy_rmm
 from cuml.datasets.utils import _create_rs_generator
-from cuml.dask.datasets.utils import _get_X
-from cuml.dask.datasets.utils import _get_labels
-from cuml.dask.datasets.utils import _create_delayed
-from cuml.dask.common.utils import get_client
 
 import math
 

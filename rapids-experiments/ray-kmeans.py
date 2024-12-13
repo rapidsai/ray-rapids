@@ -6,8 +6,7 @@ from raft_dask.common.nccl import nccl
 from pylibraft.common.handle import Handle
 from raft_dask.common.comms_utils import inject_comms_on_handle_coll_only
 from ray_comms import Comms
-import cudf
-from ray.util.actor_pool import ActorPool
+import numpy as np
 
 from cuml_utils import make_blobs
 
@@ -92,29 +91,25 @@ class NCCLActor:
     def get_variable(self, name):
         return getattr(self, name)
 
-    def kmeans(self):
-        """
-        sample
-        weight
-        """
+    def kmeans(self, n_clusters=8, max_iter=300, tol=1e-4,
+                 verbose=False, random_state=1,
+                 init='k-means||', n_init=1, oversampling_factor=2.0,
+                 max_samples_per_batch=1<<15, convert_dtype=True,
+                 output_type=None):
         from cuml.cluster.kmeans_mg import KMeansMG as cumlKMeans
 
         rhandle = self._raft_handle
-        # if not has_weights:
-        #     inp_data = concatenate(objs)
-        #     inp_weights = None
-        # else:
-        #     inp_data = concatenate([X for X, weights in objs])
-        #     inp_weights = concatenate([weights for X, weights in objs])
         inp_weights = None
         inp_data = self.X
         datatype = 'cupy'
 
-        self.kmeans_res = cumlKMeans(handle=rhandle, output_type=datatype).fit(
+        self.kmeans_res = cumlKMeans(handle=rhandle, output_type=datatype, init=init,
+                                     n_clusters=n_clusters, max_iter=max_iter, tol=tol,
+                                     verbose=verbose, n_init=n_init,
+                                     oversampling_factor=oversampling_factor,
+                                       max_samples_per_batch=max_samples_per_batch, convert_dtype=convert_dtype).fit(
             inp_data, sample_weight=inp_weights
         )
-
-        print("succeded", flush=True)
         return True
 
     def score(self, vals=None, sample_weight=None):
@@ -145,24 +140,28 @@ ray.get(root_actor.broadcast_root_unique_id.remote())
 # Setup Comms (NCCL/Sub-communicator)
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
 
-# res = ray.get([actor_pool[i].send_message.remote("Hello, world!", actor_pool) for i in range(pool_size)])
 ray.get([actor_pool[i].send_message.remote("Hello, world!", actor_pool) for i in range(pool_size)])
 
-make_blobs(actor_pool, 1001, 10, centers=42, cluster_std=0.1)
+# make random blobs on each actor
+make_blobs(actor_pool, int(5e3), 10, cluster_std=0.1)
 
-res = ray.get([actor_pool[i].kmeans.remote() for i in range(pool_size)])
+# run kmeans
+ray.get([actor_pool[i].kmeans.remote(n_clusters=8) for i in range(pool_size)])
 
-# res = ray.get([actor_pool[i].get_variable.remote("X") for i in range(pool_size)])
-# print(res, flush=True)
-
-# pool = ActorPool(actor_pool)
-
-# ray.get(actor_pool[i].kmeans.remote(...)
 scores = ray.get([actor_pool[i].score.remote() for i in range(pool_size)])
 
-import time
-# time.sleep(10000)
+# Collect original mak_blobs data and serialized model for correctness checks
+X = ray.get([actor_pool[i].get_variable.remote("X") for i in range(pool_size)])
+kmeans_models = ray.get([actor_pool[i].get_variable.remote("kmeans_res") for i in range(pool_size)])
+
+X = np.concatenate(X)
+local_model = kmeans_models[0] # use any model from ray actors
+
+expected_score = local_model.score(X)
+actual_score = sum(scores)
+
+assert abs(actual_score - expected_score) < 9e-3
 print("Shutting down...", flush=True)
 
 # Shut down Ray
-# ray.shutdown()
+ray.shutdown()
