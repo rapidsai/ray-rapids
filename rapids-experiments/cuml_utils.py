@@ -55,7 +55,6 @@ def make_blobs(
     n_features=2,
     centers=None,
     cluster_std=1.0,
-    n_parts=None,
     center_box=(-10, 10),
     shuffle=True,
     random_state=None,
@@ -90,9 +89,6 @@ def make_blobs(
         or an array of length equal to the length of n_samples.
     cluster_std : float (default = 1.0)
          standard deviation of points around centroid
-    n_parts : int (default = None)
-        number of partitions to generate (this can be greater
-        than the number of workers)
     center_box : tuple (int, int) (default = (-10, 10))
          the bounding box which constrains all the centroids
     random_state : int (default = None)
@@ -107,8 +103,6 @@ def make_blobs(
         The order of the generated samples
     dtype : str, optional (default='float32')
         Dtype of the generated samples
-    client : dask.distributed.Client (optional)
-             Dask client to use
     Returns
     -------
     X : dask.array backed by CuPy array of shape [n_samples, n_features]

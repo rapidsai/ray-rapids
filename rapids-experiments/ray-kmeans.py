@@ -138,8 +138,6 @@ ray.get(root_actor.broadcast_root_unique_id.remote())
 # Setup Comms (NCCL/Sub-communicator)
 ray.get([actor_pool[i].setup.remote() for i in range(pool_size)])
 
-ray.get([actor_pool[i].send_message.remote("Hello, world!", actor_pool) for i in range(pool_size)])
-
 # make random blobs on each actor
 make_blobs(actor_pool, int(5e3), 10, cluster_std=0.1)
 
